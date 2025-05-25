@@ -177,14 +177,22 @@ def train_and_evaluate_enhanced(data, model_type='lasso', n_features=50):
         test_pred = model.predict(X_test_scaled)
         
         # Store individual predictions for portfolio analysis
-        test_predictions = pd.DataFrame({
+        prediction_data = {
             'permno': test_data['permno'].values,
             'date': test_data['date'].values,
             'year': test_data['date'].dt.year.values,
             'month': test_data['date'].dt.month.values,
             'stock_exret': y_test.values,  # actual returns
             model_type: test_pred  # predicted returns for this model
-        })
+        }
+        
+        # Add ticker and company info if available
+        if 'stock_ticker' in test_data.columns:
+            prediction_data['stock_ticker'] = test_data['stock_ticker'].values
+        if 'comp_name' in test_data.columns:
+            prediction_data['comp_name'] = test_data['comp_name'].values
+            
+        test_predictions = pd.DataFrame(prediction_data)
         all_predictions.append(test_predictions)
         
         # Calculate metrics
@@ -246,6 +254,19 @@ def train_and_evaluate_enhanced(data, model_type='lasso', n_features=50):
         all_predictions_df.to_csv(predictions_filename, index=False)
         print(f"Individual predictions saved to: {predictions_filename}")
         print(f"Predictions shape: {all_predictions_df.shape}")
+        
+        # Check what columns were included
+        has_ticker = 'stock_ticker' in all_predictions_df.columns
+        has_company = 'comp_name' in all_predictions_df.columns
+        print(f"Columns included: {list(all_predictions_df.columns)}")
+        if has_ticker and has_company:
+            print("✅ Ticker symbols and company names included!")
+        elif has_ticker:
+            print("⚠️  Ticker symbols included, but company names missing")
+        elif has_company:
+            print("⚠️  Company names included, but ticker symbols missing")
+        else:
+            print("⚠️  No ticker or company information available")
         
         # Calculate overall out-of-sample R²
         overall_r2 = r2_score(all_predictions_df['stock_exret'], all_predictions_df[model_type])
@@ -313,6 +334,9 @@ if __name__ == "__main__":
     # Try different feature selection sizes
     feature_sizes = [30, 50, 75]
     
+    # Initialize list to store overall model performance
+    model_summary = []
+    
     for n_features in feature_sizes:
         print(f"\n{'='*60}")
         print(f"Testing with {n_features} features")
@@ -331,6 +355,57 @@ if __name__ == "__main__":
         # Save results
         lasso_results.to_csv(f"enhanced_lasso_results_{n_features}features.csv", index=False)
         ridge_results.to_csv(f"enhanced_ridge_results_{n_features}features.csv", index=False)
+        
+        # Calculate MSE for summary (avoid re-reading CSV)
+        lasso_mse = np.nan
+        ridge_mse = np.nan
+        lasso_obs = 0
+        ridge_obs = 0
+        
+        if lasso_overall_r2 is not None:
+            lasso_pred_data = pd.read_csv(f"stock_predictions_lasso.csv")
+            lasso_mse = mean_squared_error(lasso_pred_data['stock_exret'], lasso_pred_data['lasso'])
+            lasso_obs = len(lasso_pred_data)
+            
+        if ridge_overall_r2 is not None:
+            ridge_pred_data = pd.read_csv(f"stock_predictions_ridge.csv")
+            ridge_mse = mean_squared_error(ridge_pred_data['stock_exret'], ridge_pred_data['ridge'])
+            ridge_obs = len(ridge_pred_data)
+        
+        # Store overall model performance for summary
+        model_summary.append({
+            'model': 'Lasso',
+            'n_features': n_features,
+            'overall_r2': lasso_overall_r2 if lasso_overall_r2 is not None else np.nan,
+            'overall_mse': lasso_mse,
+            'mean_period_r2': lasso_results['test_r2'].mean(),
+            'median_period_r2': lasso_results['test_r2'].median(),
+            'std_period_r2': lasso_results['test_r2'].std(),
+            'min_period_r2': lasso_results['test_r2'].min(),
+            'max_period_r2': lasso_results['test_r2'].max(),
+            'positive_r2_periods': (lasso_results['test_r2'] > 0).sum(),
+            'total_periods': len(lasso_results),
+            'target_achieved_periods': (lasso_results['test_r2'] >= 0.01).sum(),
+            'mean_alpha': lasso_results['best_alpha'].mean(),
+            'total_test_observations': lasso_obs
+        })
+        
+        model_summary.append({
+            'model': 'Ridge',
+            'n_features': n_features,
+            'overall_r2': ridge_overall_r2 if ridge_overall_r2 is not None else np.nan,
+            'overall_mse': ridge_mse,
+            'mean_period_r2': ridge_results['test_r2'].mean(),
+            'median_period_r2': ridge_results['test_r2'].median(),
+            'std_period_r2': ridge_results['test_r2'].std(),
+            'min_period_r2': ridge_results['test_r2'].min(),
+            'max_period_r2': ridge_results['test_r2'].max(),
+            'positive_r2_periods': (ridge_results['test_r2'] > 0).sum(),
+            'total_periods': len(ridge_results),
+            'target_achieved_periods': (ridge_results['test_r2'] >= 0.01).sum(),
+            'mean_alpha': ridge_results['best_alpha'].mean(),
+            'total_test_observations': ridge_obs
+        })
         
         # Check if we achieved our target
         lasso_target_achieved = (lasso_results['test_r2'] >= 0.01).sum()
@@ -353,5 +428,117 @@ if __name__ == "__main__":
         if lasso_target_achieved > 0 or ridge_target_achieved > 0:
             print("🎉 SUCCESS! We achieved R² ≥ 0.01 in some periods!")
     
+    # Save overall model performance summary
+    summary_df = pd.DataFrame(model_summary)
+    
+    # Round numerical columns for better readability
+    numerical_cols = ['overall_r2', 'overall_mse', 'mean_period_r2', 'median_period_r2', 
+                     'std_period_r2', 'min_period_r2', 'max_period_r2', 'mean_alpha']
+    summary_df[numerical_cols] = summary_df[numerical_cols].round(6)
+    
+    # Add percentage columns for easier interpretation
+    summary_df['positive_r2_percentage'] = (summary_df['positive_r2_periods'] / summary_df['total_periods'] * 100).round(1)
+    summary_df['target_achieved_percentage'] = (summary_df['target_achieved_periods'] / summary_df['total_periods'] * 100).round(1)
+    
+    # Reorder columns for better presentation
+    column_order = [
+        'model', 'n_features', 'overall_r2', 'overall_mse', 
+        'mean_period_r2', 'median_period_r2', 'std_period_r2', 'min_period_r2', 'max_period_r2',
+        'positive_r2_periods', 'positive_r2_percentage', 'target_achieved_periods', 'target_achieved_percentage',
+        'total_periods', 'total_test_observations', 'mean_alpha'
+    ]
+    summary_df = summary_df[column_order]
+    
+    # Save to CSV with timestamp
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    summary_filename = f"model_performance_summary.csv"
+    summary_df.to_csv(summary_filename, index=False)
+    
     print(f"\nTraining completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("All model predictions saved! Check the stock_predictions_*.csv files to choose the best model for portfolio analysis.") 
+    print("All model predictions saved! Check the stock_predictions_*.csv files to choose the best model for portfolio analysis.")
+    print(f"\n📊 MODEL PERFORMANCE SUMMARY SAVED: {summary_filename}")
+    print("\nSummary Table:")
+    print("="*100)
+    print(summary_df.to_string(index=False))
+    
+    # Find and highlight best performing models
+    print(f"\n🏆 BEST PERFORMING MODELS:")
+    print("="*50)
+    best_overall_r2 = summary_df.loc[summary_df['overall_r2'].idxmax()]
+    best_mean_period_r2 = summary_df.loc[summary_df['mean_period_r2'].idxmax()]
+    
+    print(f"Best Overall R²: {best_overall_r2['model']} with {best_overall_r2['n_features']} features (R² = {best_overall_r2['overall_r2']:.6f})")
+    print(f"Best Mean Period R²: {best_mean_period_r2['model']} with {best_mean_period_r2['n_features']} features (R² = {best_mean_period_r2['mean_period_r2']:.6f})")
+    
+    # Show models that achieved target
+    successful_models = summary_df[summary_df['target_achieved_periods'] > 0]
+    if len(successful_models) > 0:
+        print(f"\n✅ Models achieving R² ≥ 0.01 in some periods:")
+        for _, row in successful_models.iterrows():
+            print(f"  {row['model']} ({row['n_features']} features): {row['target_achieved_periods']}/{row['total_periods']} periods ({row['target_achieved_percentage']:.1f}%)")
+    
+    # 🎯 DEFINE AND SELECT THE BEST MODEL
+    print(f"\n" + "="*80)
+    print("🎯 BEST MODEL SELECTION FOR PORTFOLIO ANALYSIS")
+    print("="*80)
+    
+    # Filter out models with NaN overall_r2
+    valid_models = summary_df.dropna(subset=['overall_r2'])
+    
+    if len(valid_models) == 0:
+        print("❌ ERROR: No valid models found!")
+        best_model_info = None
+    else:
+        # Define selection criteria (you can modify these)
+        print("📋 SELECTION CRITERIA:")
+        print("  Primary: Highest Overall R² (most important for portfolio performance)")
+        print("  Secondary: Consistency (positive R² in multiple periods)")
+        print("  Tertiary: Target achievement (R² ≥ 0.01 in some periods)")
+        
+        # Primary criterion: Best overall R²
+        best_model_row = valid_models.loc[valid_models['overall_r2'].idxmax()]
+        
+        # Create best model info
+        best_model_info = {
+            'model_type': best_model_row['model'].lower(),  # 'lasso' or 'ridge'
+            'n_features': int(best_model_row['n_features']),
+            'overall_r2': best_model_row['overall_r2'],
+            'overall_mse': best_model_row['overall_mse'],
+            'mean_period_r2': best_model_row['mean_period_r2'],
+            'positive_r2_periods': int(best_model_row['positive_r2_periods']),
+            'target_achieved_periods': int(best_model_row['target_achieved_periods']),
+            'total_periods': int(best_model_row['total_periods']),
+            'predictions_file': f"stock_predictions_{best_model_row['model'].lower()}.csv"
+        }
+        
+        print(f"\n🏆 SELECTED BEST MODEL:")
+        print(f"  Model: {best_model_info['model_type'].title()}")
+        print(f"  Features: {best_model_info['n_features']}")
+        print(f"  Overall R²: {best_model_info['overall_r2']:.6f}")
+        print(f"  Mean Period R²: {best_model_info['mean_period_r2']:.6f}")
+        print(f"  Positive R² Periods: {best_model_info['positive_r2_periods']}/{best_model_info['total_periods']}")
+        print(f"  Target Achieved: {best_model_info['target_achieved_periods']}/{best_model_info['total_periods']} periods")
+        print(f"  Predictions File: {best_model_info['predictions_file']}")
+        
+        # Save best model info for portfolio analysis
+        import json
+        with open('best_model_info.json', 'w') as f:
+            json.dump(best_model_info, f, indent=2)
+        
+        print(f"\n💾 Best model info saved to: best_model_info.json")
+        print("   This file will be used by portfolio_analysis_detailed.py")
+        
+        # Alternative models ranking
+        print(f"\n📊 ALL MODELS RANKED BY OVERALL R²:")
+        ranked_models = valid_models.sort_values('overall_r2', ascending=False)
+        for i, (_, row) in enumerate(ranked_models.iterrows(), 1):
+            marker = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
+            print(f"  {marker} {row['model']} ({row['n_features']} features): R² = {row['overall_r2']:.6f}")
+        
+        # Recommendation for portfolio analysis
+        if best_model_info['overall_r2'] > 0:
+            print(f"\n✅ RECOMMENDATION: Use {best_model_info['model_type'].title()} model for portfolio analysis")
+            print(f"   Expected out-of-sample performance: R² = {best_model_info['overall_r2']:.6f}")
+        else:
+            print(f"\n⚠️  WARNING: Best model has negative R² ({best_model_info['overall_r2']:.6f})")
+            print("   Consider improving features or trying different models before portfolio analysis") 

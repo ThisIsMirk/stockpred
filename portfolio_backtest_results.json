@@ -1,0 +1,110 @@
+{
+  "strategy_config": {
+    "rebalance_frequency": "monthly",
+    "long_holdings": 50,
+    "short_holdings": 50,
+    "total_holdings": 100,
+    "min_holdings_required": 50,
+    "max_holdings_required": 100
+  },
+  "performance_metrics": {
+    "strategy": {
+      "strategy_name": "Long-Short Strategy",
+      "total_months": 168,
+      "mean_monthly_return": 0.0047717813737519045,
+      "monthly_volatility": 0.023879730012363144,
+      "annualized_return": 0.058788351984767395,
+      "annualized_volatility": 0.08272181130488067,
+      "sharpe_ratio": 0.17002934289386887,
+      "annualized_sharpe": 0.7106753473772016,
+      "alpha_monthly": 0.002249398907338157,
+      "alpha_annualized": 0.026992786888057882,
+      "beta": 0.20417140475478812,
+      "r_squared": 0.13362121042254949,
+      "information_ratio": -0.11866097719275376,
+      "max_drawdown": -0.14369947651434356,
+      "max_monthly_loss": -0.05936848918,
+      "win_rate": 0.5952380952380952,
+      "cumulative_return": 1.1230064714806334
+    },
+    "long_only": {
+      "strategy_name": "Long Portfolio Only",
+      "total_months": 168,
+      "mean_monthly_return": 0.013076789033275714,
+      "monthly_volatility": 0.05218653420165178,
+      "annualized_return": 0.1687143655219756,
+      "annualized_volatility": 0.1807794574163836,
+      "sharpe_ratio": 0.23656001092249068,
+      "annualized_sharpe": 0.9332607140941969,
+      "alpha_monthly": 0.0025106740749419633,
+      "alpha_annualized": 0.03012808889930356,
+      "beta": 1.1086039663003482,
+      "r_squared": 0.8235463176091897,
+      "information_ratio": 0.15483996251139337,
+      "max_drawdown": -0.3128459467251127,
+      "max_monthly_loss": -0.20163633463399996,
+      "win_rate": 0.6666666666666666,
+      "cumulative_return": 6.080742127374293
+    },
+    "short_only": {
+      "strategy_name": "Short Portfolio Only",
+      "total_months": 168,
+      "mean_monthly_return": 0.00830500765952381,
+      "monthly_volatility": 0.04117601898560263,
+      "annualized_return": 0.10434072738194655,
+      "annualized_volatility": 0.1426379138729689,
+      "sharpe_ratio": 0.18394138734715657,
+      "annualized_sharpe": 0.7315076654505112,
+      "alpha_monthly": -0.0004544493793463937,
+      "alpha_annualized": -0.0054533925521567245,
+      "beta": 0.9054644099341522,
+      "r_squared": 0.8803581274539173,
+      "information_ratio": -0.08721704939323842,
+      "max_drawdown": -0.2422571107283068,
+      "max_monthly_loss": -0.14541324917999998,
+      "win_rate": 0.625,
+      "cumulative_return": 2.4863372425796464
+    },
+    "market": {
+      "strategy_name": "S&P 500 Benchmark",
+      "total_months": 168,
+      "mean_monthly_return": 0.00960022619047619,
+      "monthly_volatility": 0.04277746047207045,
+      "annualized_return": 0.12148448657236366,
+      "annualized_volatility": 0.1481854699127907,
+      "sharpe_ratio": 0.20776720573209725,
+      "annualized_sharpe": 0.8198137553152752,
+      "alpha_monthly": 0.0,
+      "alpha_annualized": 0.0,
+      "beta": 1.0,
+      "r_squared": 1.0,
+      "information_ratio": 0,
+      "max_drawdown": -0.24769650831828313,
+      "max_monthly_loss": -0.125119,
+      "win_rate": 0.6547619047619048,
+      "cumulative_return": 3.2774746033087334
+    }
+  },
+  "turnover_analysis": {
+    "avg_turnover_when_rebalancing": 0.29880239520958085,
+    "avg_monthly_turnover": 0.29880239520958085,
+    "rebalancing_events": 167
+  },
+  "compliance": {
+    "holdings_compliant": true,
+    "rebalancing_compliant": true,
+    "active_management": "True"
+  },
+  "model_info": {
+    "model_type": "ridge",
+    "n_features": 75,
+    "overall_r2": 0.032348,
+    "overall_mse": 0.005511,
+    "mean_period_r2": -0.005778,
+    "positive_r2_periods": 6,
+    "target_achieved_periods": 4,
+    "total_periods": 14,
+    "predictions_file": "stock_predictions_ridge.csv"
+  },
+  "analysis_date": "2025-05-25 14:20:05"
+}

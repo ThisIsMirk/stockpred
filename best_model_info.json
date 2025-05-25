@@ -1,0 +1,11 @@
+{
+  "model_type": "ridge",
+  "n_features": 75,
+  "overall_r2": 0.032348,
+  "overall_mse": 0.005511,
+  "mean_period_r2": -0.005778,
+  "positive_r2_periods": 6,
+  "target_achieved_periods": 4,
+  "total_periods": 14,
+  "predictions_file": "stock_predictions_ridge.csv"
+}
