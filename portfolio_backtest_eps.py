@@ -93,42 +93,21 @@ print(f"Date range: {pred['date'].min().strftime('%Y-%m')} to {pred['date'].max(
 
 # Check if we have stock_exret column for returns
 if 'stock_exret' not in pred.columns:
-    print("⚠️  'stock_exret' column not found in EPS predictions. Loading original data to merge...")
+    print("❌ ERROR: 'stock_exret' column not found in EPS predictions!")
+    print("   This should be included automatically in the EPS predictions.")
+    print("   Please re-run the EPS training script with the updated version.")
+    exit(1)
+else:
+    print("✅ Stock returns already included in EPS predictions!")
     
-    # Load original sampled data to get stock returns
-    if os.path.exists('sampled_stocks.csv'):
-        original_data = pd.read_csv('sampled_stocks.csv')
-        
-        # Handle different date formats
-        if original_data['date'].dtype == 'int64':
-            original_data['date'] = pd.to_datetime(original_data['date'], format='%Y%m%d')
-        else:
-            original_data['date'] = pd.to_datetime(original_data['date'])
-        
-        # Merge EPS predictions with stock returns
-        print(f"   Original data shape: {original_data.shape}")
-        print(f"   EPS predictions shape: {pred.shape}")
-        
-        # Merge on permno and date
-        pred = pred.merge(
-            original_data[['permno', 'date', 'stock_exret']], 
-            on=['permno', 'date'], 
-            how='left'
-        )
-        
-        print(f"   Merged data shape: {pred.shape}")
-        print(f"   Stock returns found for {pred['stock_exret'].notna().sum()} / {len(pred)} predictions")
-        
-        if pred['stock_exret'].isna().sum() > 0:
-            print(f"   ⚠️  {pred['stock_exret'].isna().sum()} predictions missing stock returns")
-            # Remove rows without stock returns
-            pred = pred.dropna(subset=['stock_exret'])
-            print(f"   Final data shape after removing missing returns: {pred.shape}")
-    else:
-        print("❌ ERROR: sampled_stocks.csv not found! Cannot get stock returns for backtesting.")
-        exit(1)
+    # Check for missing stock returns
+    missing_returns = pred['stock_exret'].isna().sum()
+    if missing_returns > 0:
+        print(f"⚠️  {missing_returns} predictions have missing stock returns")
+        pred = pred.dropna(subset=['stock_exret'])
+        print(f"   Removed missing returns. Final shape: {pred.shape}")
 
-print(f"✓ Found both EPS predictions and stock returns for backtesting")
+print(f"✓ Ready for backtesting with {len(pred):,} observations")
 
 # STEP 2: LOAD MARKET DATA
 print("\n2. LOADING MARKET DATA...")
@@ -335,6 +314,9 @@ def calculate_performance_metrics(returns, rf_rate, market_returns, strategy_nam
     # Tracking error
     tracking_error = active_returns.std() * np.sqrt(12)
     
+    # Maximum one-month loss
+    max_monthly_loss = returns.min()
+    
     return {
         'strategy_name': strategy_name,
         'mean_monthly_return': mean_return,
@@ -354,7 +336,8 @@ def calculate_performance_metrics(returns, rf_rate, market_returns, strategy_nam
         'alpha': alpha,
         'annual_alpha': annual_alpha,
         'tracking_error': tracking_error,
-        'total_months': len(returns)
+        'total_months': len(returns),
+        'max_monthly_loss': max_monthly_loss
     }
 
 # Merge with market data
@@ -479,6 +462,7 @@ def print_metrics(metrics):
     print(f"Kurtosis:             {metrics['kurtosis']:>8.2f}")
     print(f"VaR (5%):             {metrics['var_5']:>8.2%}")
     print(f"CVaR (5%):            {metrics['cvar_5']:>8.2%}")
+    print(f"Max Monthly Loss:      {metrics['max_monthly_loss']:>8.2%}")
 
 # Print all metrics
 print_metrics(long_short_metrics)

@@ -1,11 +1,12 @@
 {
-  "model_type": "ridge",
+  "model_type": "elasticnet",
   "n_features": 75,
-  "overall_r2": 0.201381,
-  "overall_mse": 91525.208343,
-  "mean_period_r2": 0.214165,
-  "positive_r2_periods": 14,
-  "target_achieved_periods": 14,
+  "overall_r2": 0.002128,
+  "overall_mse": 12200.261088,
+  "mean_period_r2": -0.004176,
+  "positive_r2_periods": 8,
+  "target_achieved_periods": 0,
   "total_periods": 14,
-  "predictions_file": "eps_predictions/eps_predictions_ridge.csv"
+  "predictions_file": "eps_predictions/eps_predictions_elasticnet.csv",
+  "mean_l1_ratio": 0.10000000000000002
 }

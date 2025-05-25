@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from sklearn.linear_model import Lasso, Ridge, LassoCV, RidgeCV
+from sklearn.linear_model import Lasso, Ridge, LassoCV, RidgeCV, ElasticNet, ElasticNetCV
 from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.feature_selection import SelectKBest, f_regression, RFE
 from sklearn.metrics import r2_score, mean_squared_error
@@ -21,6 +21,12 @@ def prepare_data_enhanced(data, n_features=50):
     
     # Drop non-feature columns
     columns_to_drop = ['eps_actual', 'permno', 'date']
+    
+    # Drop forward-looking columns that would cause data leakage
+    forward_looking_columns = ['eps_medest', 'eps_meanest', 'eps_stdevest', 'stock_exret']
+    # Only drop columns that actually exist in the data
+    existing_forward_looking = [col for col in forward_looking_columns if col in data.columns]
+    columns_to_drop.extend(existing_forward_looking)
     
     # Also drop any string/object columns that can't be used as features
     string_columns = data.select_dtypes(include=['object']).columns.tolist()
@@ -59,6 +65,7 @@ def prepare_data_enhanced(data, n_features=50):
         X = pd.DataFrame(X_selected, columns=selected_features, index=X.index)
     
     print(f"Features used: {X.shape[1]} columns (after feature selection)")
+    print(f"Forward-looking columns dropped: {existing_forward_looking}")
     print(f"String columns dropped: {string_columns}")
     if len(zero_var_features) > 0:
         print(f"Zero variance features dropped: {len(zero_var_features)}")
@@ -73,13 +80,24 @@ def optimize_hyperparameters(X_train, y_train, model_type='lasso', cv_folds=3):
         # Test a range of alpha values for Lasso
         alphas = np.logspace(-4, 1, 20)  # From 0.0001 to 10
         model = LassoCV(alphas=alphas, cv=cv_folds, random_state=42, max_iter=2000)
-    else:
+        model.fit(X_train, y_train)
+        return model, model.alpha_
+    elif model_type == 'ridge':
         # Test a range of alpha values for Ridge
         alphas = np.logspace(-4, 2, 20)  # From 0.0001 to 100
         model = RidgeCV(alphas=alphas, cv=cv_folds)
-    
-    model.fit(X_train, y_train)
-    return model, model.alpha_
+        model.fit(X_train, y_train)
+        return model, model.alpha_
+    elif model_type == 'elasticnet':
+        # Test a range of alpha and l1_ratio values for Elastic Net
+        alphas = np.logspace(-4, 1, 15)  # From 0.0001 to 10
+        l1_ratios = [0.1, 0.3, 0.5, 0.7, 0.9]  # Mix of L1 and L2 regularization
+        model = ElasticNetCV(alphas=alphas, l1_ratio=l1_ratios, cv=cv_folds, 
+                           random_state=42, max_iter=2000)
+        model.fit(X_train, y_train)
+        return model, {'alpha': model.alpha_, 'l1_ratio': model.l1_ratio_}
+    else:
+        raise ValueError(f"Unknown model_type: {model_type}. Use 'lasso', 'ridge', or 'elasticnet'.")
 
 def train_and_evaluate_enhanced(data, model_type='lasso', n_features=50):
     """
@@ -171,7 +189,17 @@ def train_and_evaluate_enhanced(data, model_type='lasso', n_features=50):
         X_test_scaled = scaler.transform(X_test)
         
         # Optimize hyperparameters
-        model, best_alpha = optimize_hyperparameters(X_train_scaled, y_train, model_type)
+        model, best_params = optimize_hyperparameters(X_train_scaled, y_train, model_type)
+        
+        # Extract alpha for display and storage (handle different return formats)
+        if isinstance(best_params, dict):
+            # Elastic Net returns dict with alpha and l1_ratio
+            best_alpha = best_params['alpha']
+            best_l1_ratio = best_params.get('l1_ratio', None)
+        else:
+            # Lasso and Ridge return just alpha
+            best_alpha = best_params
+            best_l1_ratio = None
         
         # Make predictions
         val_pred = model.predict(X_val_scaled)
@@ -186,6 +214,10 @@ def train_and_evaluate_enhanced(data, model_type='lasso', n_features=50):
             'eps_actual': y_test.values,  # actual EPS
             model_type: test_pred  # predicted EPS for this model
         }
+        
+        # Add stock returns if available (needed for backtesting)
+        if 'stock_exret' in test_data.columns:
+            prediction_data['stock_exret'] = test_data['stock_exret'].values
         
         # Add ticker and company info if available
         if 'stock_ticker' in test_data.columns:
@@ -202,8 +234,8 @@ def train_and_evaluate_enhanced(data, model_type='lasso', n_features=50):
         val_mse = mean_squared_error(y_val, val_pred)
         test_mse = mean_squared_error(y_test, test_pred)
         
-        # Store results
-        results.append({
+        # Store results (include l1_ratio for Elastic Net)
+        result_dict = {
             'train_start': train_start.strftime('%Y-%m-%d'),
             'train_end': train_end.strftime('%Y-%m-%d'),
             'val_start': val_start.strftime('%Y-%m-%d'),
@@ -218,7 +250,13 @@ def train_and_evaluate_enhanced(data, model_type='lasso', n_features=50):
             'n_features': len(common_features),
             'train_size': len(train_data),
             'test_size': len(test_data)
-        })
+        }
+        
+        # Add l1_ratio for Elastic Net
+        if best_l1_ratio is not None:
+            result_dict['best_l1_ratio'] = best_l1_ratio
+            
+        results.append(result_dict)
         
         # Update dates for next iteration (EXPANDING WINDOW)
         # Training window expands by one year (keeps start date, extends end date)
@@ -233,13 +271,19 @@ def train_and_evaluate_enhanced(data, model_type='lasso', n_features=50):
         
         # Calculate and display iteration time
         iteration_time = time.time() - iteration_start
-        pbar.set_postfix({
+        postfix_dict = {
             'iteration_time': f'{iteration_time:.2f}s',
             'val_r2': f'{val_r2:.4f}',
             'test_r2': f'{test_r2:.4f}',
             'alpha': f'{best_alpha:.4f}',
             'features': len(common_features)
-        })
+        }
+        
+        # Add l1_ratio for Elastic Net
+        if best_l1_ratio is not None:
+            postfix_dict['l1_ratio'] = f'{best_l1_ratio:.3f}'
+            
+        pbar.set_postfix(postfix_dict)
     
     # Close progress bar
     pbar.close()
@@ -263,7 +307,10 @@ def train_and_evaluate_enhanced(data, model_type='lasso', n_features=50):
         # Check what columns were included
         has_ticker = 'stock_ticker' in all_predictions_df.columns
         has_company = 'comp_name' in all_predictions_df.columns
+        has_stock_returns = 'stock_exret' in all_predictions_df.columns
         print(f"Columns included: {list(all_predictions_df.columns)}")
+        
+        # Report on data availability
         if has_ticker and has_company:
             print("✅ Ticker symbols and company names included!")
         elif has_ticker:
@@ -272,6 +319,11 @@ def train_and_evaluate_enhanced(data, model_type='lasso', n_features=50):
             print("⚠️  Company names included, but ticker symbols missing")
         else:
             print("⚠️  No ticker or company information available")
+            
+        if has_stock_returns:
+            print("✅ Stock returns (stock_exret) included for backtesting!")
+        else:
+            print("⚠️  Stock returns missing - backtesting will require data merging")
         
         # Calculate overall out-of-sample R²
         overall_r2 = r2_score(all_predictions_df['eps_actual'], all_predictions_df[model_type])
@@ -326,6 +378,11 @@ def analyze_results(results_df, model_name, overall_r2=None):
     print(f"  Alpha mean: {results_df['best_alpha'].mean():.4f}")
     print(f"  Alpha range: {results_df['best_alpha'].min():.4f} - {results_df['best_alpha'].max():.4f}")
     
+    # L1 ratio statistics (for Elastic Net)
+    if 'best_l1_ratio' in results_df.columns:
+        print(f"  L1 ratio mean: {results_df['best_l1_ratio'].mean():.4f}")
+        print(f"  L1 ratio range: {results_df['best_l1_ratio'].min():.4f} - {results_df['best_l1_ratio'].max():.4f}")
+    
     return results_df
 
 if __name__ == "__main__":
@@ -333,7 +390,7 @@ if __name__ == "__main__":
     
     # Load the sampled data
     print("Loading data...")
-    data = pd.read_csv("sampled_stocks.csv")
+    data = pd.read_csv("C:/Users/abmir/OneDrive/School/McGill/Summer 2/Finance/mma_sample_v2.csv")
     print(f"Data loaded. Shape: {data.shape}")
     
     # Check if eps_actual column exists and has data
@@ -383,15 +440,23 @@ if __name__ == "__main__":
         ridge_results, ridge_overall_r2 = train_and_evaluate_enhanced(data_clean, model_type='ridge', n_features=n_features)
         ridge_analysis = analyze_results(ridge_results, f"Enhanced Ridge EPS ({n_features} features)", ridge_overall_r2)
         
+        # Train and evaluate enhanced Elastic Net model
+        print(f"\nTraining Enhanced Elastic Net model with {n_features} features (EPS target)...")
+        elasticnet_results, elasticnet_overall_r2 = train_and_evaluate_enhanced(data_clean, model_type='elasticnet', n_features=n_features)
+        elasticnet_analysis = analyze_results(elasticnet_results, f"Enhanced Elastic Net EPS ({n_features} features)", elasticnet_overall_r2)
+        
         # Save results
         lasso_results.to_csv(f"eps_predictions/enhanced_lasso_eps_results_{n_features}features.csv", index=False)
         ridge_results.to_csv(f"eps_predictions/enhanced_ridge_eps_results_{n_features}features.csv", index=False)
+        elasticnet_results.to_csv(f"eps_predictions/enhanced_elasticnet_eps_results_{n_features}features.csv", index=False)
         
         # Calculate MSE for summary (avoid re-reading CSV)
         lasso_mse = np.nan
         ridge_mse = np.nan
+        elasticnet_mse = np.nan
         lasso_obs = 0
         ridge_obs = 0
+        elasticnet_obs = 0
         
         if lasso_overall_r2 is not None:
             lasso_pred_data = pd.read_csv(f"eps_predictions/eps_predictions_lasso.csv")
@@ -402,6 +467,11 @@ if __name__ == "__main__":
             ridge_pred_data = pd.read_csv(f"eps_predictions/eps_predictions_ridge.csv")
             ridge_mse = mean_squared_error(ridge_pred_data['eps_actual'], ridge_pred_data['ridge'])
             ridge_obs = len(ridge_pred_data)
+            
+        if elasticnet_overall_r2 is not None:
+            elasticnet_pred_data = pd.read_csv(f"eps_predictions/eps_predictions_elasticnet.csv")
+            elasticnet_mse = mean_squared_error(elasticnet_pred_data['eps_actual'], elasticnet_pred_data['elasticnet'])
+            elasticnet_obs = len(elasticnet_pred_data)
         
         # Store overall model performance for summary
         model_summary.append({
@@ -438,9 +508,34 @@ if __name__ == "__main__":
             'total_test_observations': ridge_obs
         })
         
+        # Add Elastic Net model summary
+        elasticnet_summary = {
+            'model': 'ElasticNet_EPS',
+            'n_features': n_features,
+            'overall_r2': elasticnet_overall_r2 if elasticnet_overall_r2 is not None else np.nan,
+            'overall_mse': elasticnet_mse,
+            'mean_period_r2': elasticnet_results['test_r2'].mean(),
+            'median_period_r2': elasticnet_results['test_r2'].median(),
+            'std_period_r2': elasticnet_results['test_r2'].std(),
+            'min_period_r2': elasticnet_results['test_r2'].min(),
+            'max_period_r2': elasticnet_results['test_r2'].max(),
+            'positive_r2_periods': (elasticnet_results['test_r2'] > 0).sum(),
+            'total_periods': len(elasticnet_results),
+            'target_achieved_periods': (elasticnet_results['test_r2'] >= 0.01).sum(),
+            'mean_alpha': elasticnet_results['best_alpha'].mean(),
+            'total_test_observations': elasticnet_obs
+        }
+        
+        # Add mean l1_ratio for Elastic Net if available
+        if 'best_l1_ratio' in elasticnet_results.columns:
+            elasticnet_summary['mean_l1_ratio'] = elasticnet_results['best_l1_ratio'].mean()
+            
+        model_summary.append(elasticnet_summary)
+        
         # Check if we achieved our target
         lasso_target_achieved = (lasso_results['test_r2'] >= 0.01).sum()
         ridge_target_achieved = (ridge_results['test_r2'] >= 0.01).sum()
+        elasticnet_target_achieved = (elasticnet_results['test_r2'] >= 0.01).sum()
         
         print(f"\n🎯 SUMMARY FOR {n_features} FEATURES (EPS PREDICTION):")
         if lasso_overall_r2 is not None:
@@ -451,12 +546,17 @@ if __name__ == "__main__":
             print(f"  Ridge Overall R²: {ridge_overall_r2:.6f}")
         else:
             print(f"  Ridge Overall R²: N/A (no predictions)")
+        if elasticnet_overall_r2 is not None:
+            print(f"  Elastic Net Overall R²: {elasticnet_overall_r2:.6f}")
+        else:
+            print(f"  Elastic Net Overall R²: N/A (no predictions)")
         print(f"  Lasso periods with R² ≥ 0.01: {lasso_target_achieved}/{len(lasso_results)}")
         print(f"  Ridge periods with R² ≥ 0.01: {ridge_target_achieved}/{len(ridge_results)}")
+        print(f"  Elastic Net periods with R² ≥ 0.01: {elasticnet_target_achieved}/{len(elasticnet_results)}")
         
-        if (lasso_overall_r2 and lasso_overall_r2 > 0) or (ridge_overall_r2 and ridge_overall_r2 > 0):
+        if (lasso_overall_r2 and lasso_overall_r2 > 0) or (ridge_overall_r2 and ridge_overall_r2 > 0) or (elasticnet_overall_r2 and elasticnet_overall_r2 > 0):
             print("🎉 SUCCESS! We achieved positive overall out-of-sample R² for EPS prediction!")
-        if lasso_target_achieved > 0 or ridge_target_achieved > 0:
+        if lasso_target_achieved > 0 or ridge_target_achieved > 0 or elasticnet_target_achieved > 0:
             print("🎉 SUCCESS! We achieved R² ≥ 0.01 in some periods for EPS prediction!")
     
     # Save overall model performance summary
@@ -478,7 +578,14 @@ if __name__ == "__main__":
         'positive_r2_periods', 'positive_r2_percentage', 'target_achieved_periods', 'target_achieved_percentage',
         'total_periods', 'total_test_observations', 'mean_alpha'
     ]
-    summary_df = summary_df[column_order]
+    
+    # Add mean_l1_ratio column if it exists (for Elastic Net models)
+    if 'mean_l1_ratio' in summary_df.columns:
+        column_order.append('mean_l1_ratio')
+    
+    # Only select columns that exist in the dataframe
+    existing_columns = [col for col in column_order if col in summary_df.columns]
+    summary_df = summary_df[existing_columns]
     
     # Save to CSV with timestamp
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -530,8 +637,9 @@ if __name__ == "__main__":
         best_model_row = valid_models.loc[valid_models['overall_r2'].idxmax()]
         
         # Create best model info
+        model_type = best_model_row['model'].lower().replace('_eps', '')  # 'lasso', 'ridge', or 'elasticnet'
         best_model_info = {
-            'model_type': best_model_row['model'].lower().replace('_eps', ''),  # 'lasso' or 'ridge'
+            'model_type': model_type,
             'n_features': int(best_model_row['n_features']),
             'overall_r2': best_model_row['overall_r2'],
             'overall_mse': best_model_row['overall_mse'],
@@ -539,8 +647,12 @@ if __name__ == "__main__":
             'positive_r2_periods': int(best_model_row['positive_r2_periods']),
             'target_achieved_periods': int(best_model_row['target_achieved_periods']),
             'total_periods': int(best_model_row['total_periods']),
-            'predictions_file': f"eps_predictions/eps_predictions_{best_model_row['model'].lower().replace('_eps', '')}.csv"
+            'predictions_file': f"eps_predictions/eps_predictions_{model_type}.csv"
         }
+        
+        # Add l1_ratio for Elastic Net models
+        if 'mean_l1_ratio' in best_model_row and not pd.isna(best_model_row['mean_l1_ratio']):
+            best_model_info['mean_l1_ratio'] = best_model_row['mean_l1_ratio']
         
         print(f"\n🏆 SELECTED BEST EPS MODEL:")
         print(f"  Model: {best_model_info['model_type'].title()}")
@@ -549,6 +661,8 @@ if __name__ == "__main__":
         print(f"  Mean Period R²: {best_model_info['mean_period_r2']:.6f}")
         print(f"  Positive R² Periods: {best_model_info['positive_r2_periods']}/{best_model_info['total_periods']}")
         print(f"  Target Achieved: {best_model_info['target_achieved_periods']}/{best_model_info['total_periods']} periods")
+        if 'mean_l1_ratio' in best_model_info:
+            print(f"  Mean L1 Ratio: {best_model_info['mean_l1_ratio']:.4f}")
         print(f"  Predictions File: {best_model_info['predictions_file']}")
         
         # Save best model info for portfolio analysis
@@ -574,10 +688,3 @@ if __name__ == "__main__":
             print(f"\n⚠️  WARNING: Best EPS model has negative R² ({best_model_info['overall_r2']:.6f})")
             print("   Consider improving features or trying different models for EPS prediction")
         
-        # Compare with stock return prediction
-        print(f"\n🔄 COMPARISON WITH STOCK RETURN PREDICTION:")
-        print("   To compare EPS vs stock return prediction performance:")
-        print("   1. Run both improved_train_model.py and improved_train_model_eps.py")
-        print("   2. Compare the overall R² values between the two approaches")
-        print("   3. EPS prediction might be more stable but less directly tradeable")
-        print("   4. Stock return prediction is directly tradeable but might be noisier") 
