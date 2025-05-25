@@ -104,7 +104,7 @@
     "positive_r2_periods": 6,
     "target_achieved_periods": 4,
     "total_periods": 14,
-    "predictions_file": "stock_predictions_ridge.csv"
+    "predictions_file": "stock_ret_predictions/stock_predictions_ridge.csv"
   },
-  "analysis_date": "2025-05-25 14:20:05"
+  "analysis_date": "2025-05-25 15:50:28"
 }

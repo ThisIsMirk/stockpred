@@ -140,7 +140,8 @@ if os.path.exists('portfolio_backtest_results.json'):
     with open('portfolio_backtest_results.json', 'r') as f:
         summary = json.load(f)
     
-    strategies = ['long_short_metrics', 'long_only_metrics', 'market_metrics']
+    # Use the correct key structure
+    strategies = ['strategy', 'long_only', 'market']
     strategy_names = ['Long-Short', 'Long Only', 'S&P 500']
     
     metrics = ['annualized_return', 'annualized_volatility', 'annualized_sharpe', 'max_drawdown']
@@ -151,8 +152,8 @@ if os.path.exists('portfolio_backtest_results.json'):
     width = 0.25
     
     for i, (strategy, name) in enumerate(zip(strategies, strategy_names)):
-        if strategy in summary:
-            values = [summary[strategy][metric] for metric in metrics]
+        if strategy in summary['performance_metrics']:
+            values = [summary['performance_metrics'][strategy][metric] for metric in metrics]
             # Convert drawdown to positive for better visualization
             values[3] = abs(values[3])
             plt.bar(x + i*width, values, width, label=name, alpha=0.8)
@@ -178,12 +179,15 @@ if os.path.exists('portfolio_turnover_analysis.csv'):
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
     
     # Monthly turnover over time
-    for rank in [0, 9]:
-        rank_data = turnover_df[turnover_df['rank'] == rank]
-        rank_data['date'] = pd.to_datetime(rank_data[['year', 'month']].assign(day=1))
-        label = 'Short Portfolio (Rank 0)' if rank == 0 else 'Long Portfolio (Rank 9)'
-        ax1.plot(rank_data['date'], rank_data['turnover_rate'], 
-                label=label, linewidth=2, marker='o', markersize=3)
+    turnover_df['date'] = pd.to_datetime(turnover_df[['year', 'month']].assign(day=1))
+    
+    # Plot long and short turnover separately
+    ax1.plot(turnover_df['date'], turnover_df['long_turnover'], 
+            label='Long Portfolio Turnover', linewidth=2, marker='o', markersize=3, color='green')
+    ax1.plot(turnover_df['date'], turnover_df['short_turnover'], 
+            label='Short Portfolio Turnover', linewidth=2, marker='s', markersize=3, color='red')
+    ax1.plot(turnover_df['date'], turnover_df['overall_turnover'], 
+            label='Overall Turnover', linewidth=2, marker='^', markersize=3, color='blue')
     
     ax1.set_title('Monthly Portfolio Turnover Over Time', fontsize=14, fontweight='bold')
     ax1.set_xlabel('Date')
@@ -193,12 +197,16 @@ if os.path.exists('portfolio_turnover_analysis.csv'):
     ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: '{:.0%}'.format(y)))
     
     # Average turnover comparison
-    avg_turnover = turnover_df.groupby('rank')['turnover_rate'].mean()
-    ranks = ['Short (Rank 0)', 'Long (Rank 9)']
-    values = [avg_turnover[0], avg_turnover[9]]
+    avg_long_turnover = turnover_df['long_turnover'].mean()
+    avg_short_turnover = turnover_df['short_turnover'].mean()
+    avg_overall_turnover = turnover_df['overall_turnover'].mean()
     
-    bars = ax2.bar(ranks, values, color=['red', 'green'], alpha=0.7)
-    ax2.set_title('Average Monthly Turnover by Portfolio', fontsize=14, fontweight='bold')
+    categories = ['Long Portfolio', 'Short Portfolio', 'Overall Strategy']
+    values = [avg_long_turnover, avg_short_turnover, avg_overall_turnover]
+    colors = ['green', 'red', 'blue']
+    
+    bars = ax2.bar(categories, values, color=colors, alpha=0.7)
+    ax2.set_title('Average Monthly Turnover by Portfolio Type', fontsize=14, fontweight='bold')
     ax2.set_ylabel('Average Turnover Rate')
     ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: '{:.0%}'.format(y)))
     
@@ -207,6 +215,9 @@ if os.path.exists('portfolio_turnover_analysis.csv'):
         height = bar.get_height()
         ax2.text(bar.get_x() + bar.get_width()/2., height + 0.01,
                 f'{value:.1%}', ha='center', va='bottom', fontweight='bold')
+    
+    # Rotate x-axis labels for better readability
+    ax2.tick_params(axis='x', rotation=45)
     
     plt.tight_layout()
     plt.savefig('portfolio_turnover_analysis.png', dpi=300, bbox_inches='tight')
@@ -219,14 +230,14 @@ if os.path.exists('portfolio_backtest_results.json'):
     with open('portfolio_backtest_results.json', 'r') as f:
         summary = json.load(f)
     
-    strategies = ['long_short_metrics', 'long_only_metrics', 'short_only_metrics', 'market_metrics']
+    strategies = ['strategy', 'long_only', 'short_only', 'market']
     strategy_names = ['Long-Short Strategy', 'Long Portfolio', 'Short Portfolio', 'S&P 500']
     colors = ['red', 'green', 'orange', 'blue']
     
     for strategy, name, color in zip(strategies, strategy_names, colors):
-        if strategy in summary:
-            x = summary[strategy]['annualized_volatility']
-            y = summary[strategy]['annualized_return']
+        if strategy in summary['performance_metrics']:
+            x = summary['performance_metrics'][strategy]['annualized_volatility']
+            y = summary['performance_metrics'][strategy]['annualized_return']
             plt.scatter(x, y, s=200, alpha=0.7, color=color, label=name, edgecolors='black')
             
             # Add labels
@@ -264,7 +275,7 @@ if os.path.exists('portfolio_backtest_results.json'):
     with open('portfolio_backtest_results.json', 'r') as f:
         summary = json.load(f)
     
-    ls_metrics = summary['long_short_metrics']
+    ls_metrics = summary['performance_metrics']['strategy']
     print(f"\n🎯 KEY PERFORMANCE HIGHLIGHTS:")
     print(f"   • Strategy Return: {ls_metrics['annualized_return']*100:.1f}% per year")
     print(f"   • Strategy Volatility: {ls_metrics['annualized_volatility']*100:.1f}% per year")

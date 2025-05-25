@@ -7,5 +7,5 @@
   "positive_r2_periods": 6,
   "target_achieved_periods": 4,
   "total_periods": 14,
-  "predictions_file": "stock_predictions_ridge.csv"
+  "predictions_file": "stock_ret_predictions/stock_predictions_ridge.csv"
 }

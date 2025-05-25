@@ -36,8 +36,8 @@ print("✅ Holdings constraint satisfied")
 print("\n1. LOADING PREDICTIONS...")
 print("-" * 40)
 
-if os.path.exists('best_model_info.json'):
-    with open('best_model_info.json', 'r') as f:
+if os.path.exists('stock_ret_predictions/best_model_info.json'):
+    with open('stock_ret_predictions/best_model_info.json', 'r') as f:
         best_model_info = json.load(f)
     
     print(f"✓ Best model info found!")
@@ -66,8 +66,8 @@ if os.path.exists('best_model_info.json'):
         exit(1)
         
 else:
-    print("⚠ WARNING: best_model_info.json not found! Using fallback...")
-    pred_path = "stock_predictions_ridge.csv"  
+    print("⚠ WARNING: stock_ret_predictions/best_model_info.json not found! Using fallback...")
+    pred_path = "stock_ret_predictions/stock_predictions_ridge.csv"  
     model = "ridge"
     
     if os.path.exists(pred_path):
@@ -220,8 +220,12 @@ def construct_portfolio_holdings(data, model_col, long_n, short_n):
     if detailed_holdings:
         detailed_df = pd.concat(detailed_holdings, ignore_index=True)
         detailed_df = detailed_df.rename(columns={model_col: 'predicted_return'})
-        detailed_df.to_csv('portfolio_detailed_holdings.csv', index=False)
-        print(f"✓ Detailed holdings saved to: portfolio_detailed_holdings.csv")
+        
+        # Create stock_ret_results directory if it doesn't exist
+        os.makedirs("stock_ret_results", exist_ok=True)
+        
+        detailed_df.to_csv('stock_ret_results/portfolio_detailed_holdings.csv', index=False)
+        print(f"✓ Detailed holdings saved to: stock_ret_results/portfolio_detailed_holdings.csv")
         print(f"   Contains {len(detailed_df)} holdings across {detailed_df['date'].nunique()} rebalancing dates")
     
     return pd.DataFrame(portfolio_data)
@@ -576,17 +580,17 @@ results_summary = {
     'analysis_date': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
 }
 
-with open('portfolio_backtest_results.json', 'w') as f:
+with open('stock_ret_results/portfolio_backtest_results.json', 'w') as f:
     json.dump(results_summary, f, indent=2, default=str)
 
 # Save time series data
-results.to_csv('portfolio_backtest_timeseries.csv', index=False)
-turnover_df.to_csv('portfolio_turnover_analysis.csv', index=False)
+results.to_csv('stock_ret_results/portfolio_backtest_timeseries.csv', index=False)
+turnover_df.to_csv('stock_ret_results/portfolio_turnover_analysis.csv', index=False)
 
 print(f"✅ Results saved:")
-print(f"   • portfolio_backtest_results.json (summary metrics)")
-print(f"   • portfolio_backtest_timeseries.csv (monthly returns)")
-print(f"   • portfolio_turnover_analysis.csv (turnover data)")
+print(f"   • stock_ret_results/portfolio_backtest_results.json (summary metrics)")
+print(f"   • stock_ret_results/portfolio_backtest_timeseries.csv (monthly returns)")
+print(f"   • stock_ret_results/portfolio_turnover_analysis.csv (turnover data)")
 
 print(f"\n" + "="*80)
 print("CORRECTED PORTFOLIO BACKTESTING COMPLETE!")

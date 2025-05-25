@@ -8,6 +8,7 @@ from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
 import warnings
 from tqdm import tqdm
 import time
+import os
 from datetime import datetime, timedelta
 warnings.filterwarnings('ignore')
 
@@ -250,7 +251,11 @@ def train_and_evaluate_enhanced(data, model_type='lasso', n_features=50):
     # Save individual predictions for portfolio analysis
     if all_predictions:
         all_predictions_df = pd.concat(all_predictions, ignore_index=True)
-        predictions_filename = f"stock_predictions_{model_type}.csv"
+        
+        # Create stock_ret_predictions directory if it doesn't exist
+        os.makedirs("stock_ret_predictions", exist_ok=True)
+        
+        predictions_filename = f"stock_ret_predictions/stock_predictions_{model_type}.csv"
         all_predictions_df.to_csv(predictions_filename, index=False)
         print(f"Individual predictions saved to: {predictions_filename}")
         print(f"Predictions shape: {all_predictions_df.shape}")
@@ -353,8 +358,8 @@ if __name__ == "__main__":
         ridge_analysis = analyze_results(ridge_results, f"Enhanced Ridge ({n_features} features)", ridge_overall_r2)
         
         # Save results
-        lasso_results.to_csv(f"enhanced_lasso_results_{n_features}features.csv", index=False)
-        ridge_results.to_csv(f"enhanced_ridge_results_{n_features}features.csv", index=False)
+        lasso_results.to_csv(f"stock_ret_predictions/enhanced_lasso_results_{n_features}features.csv", index=False)
+        ridge_results.to_csv(f"stock_ret_predictions/enhanced_ridge_results_{n_features}features.csv", index=False)
         
         # Calculate MSE for summary (avoid re-reading CSV)
         lasso_mse = np.nan
@@ -363,12 +368,12 @@ if __name__ == "__main__":
         ridge_obs = 0
         
         if lasso_overall_r2 is not None:
-            lasso_pred_data = pd.read_csv(f"stock_predictions_lasso.csv")
+            lasso_pred_data = pd.read_csv(f"stock_ret_predictions/stock_predictions_lasso.csv")
             lasso_mse = mean_squared_error(lasso_pred_data['stock_exret'], lasso_pred_data['lasso'])
             lasso_obs = len(lasso_pred_data)
             
         if ridge_overall_r2 is not None:
-            ridge_pred_data = pd.read_csv(f"stock_predictions_ridge.csv")
+            ridge_pred_data = pd.read_csv(f"stock_ret_predictions/stock_predictions_ridge.csv")
             ridge_mse = mean_squared_error(ridge_pred_data['stock_exret'], ridge_pred_data['ridge'])
             ridge_obs = len(ridge_pred_data)
         
@@ -451,11 +456,11 @@ if __name__ == "__main__":
     
     # Save to CSV with timestamp
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    summary_filename = f"model_performance_summary.csv"
+    summary_filename = f"stock_ret_predictions/model_performance_summary.csv"
     summary_df.to_csv(summary_filename, index=False)
     
     print(f"\nTraining completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("All model predictions saved! Check the stock_predictions_*.csv files to choose the best model for portfolio analysis.")
+    print("All model predictions saved! Check the stock_ret_predictions/ folder to analyze stock return prediction performance.")
     print(f"\n📊 MODEL PERFORMANCE SUMMARY SAVED: {summary_filename}")
     print("\nSummary Table:")
     print("="*100)
@@ -508,7 +513,7 @@ if __name__ == "__main__":
             'positive_r2_periods': int(best_model_row['positive_r2_periods']),
             'target_achieved_periods': int(best_model_row['target_achieved_periods']),
             'total_periods': int(best_model_row['total_periods']),
-            'predictions_file': f"stock_predictions_{best_model_row['model'].lower()}.csv"
+            'predictions_file': f"stock_ret_predictions/stock_predictions_{best_model_row['model'].lower()}.csv"
         }
         
         print(f"\n🏆 SELECTED BEST MODEL:")
@@ -522,10 +527,10 @@ if __name__ == "__main__":
         
         # Save best model info for portfolio analysis
         import json
-        with open('best_model_info.json', 'w') as f:
+        with open('stock_ret_predictions/best_model_info.json', 'w') as f:
             json.dump(best_model_info, f, indent=2)
         
-        print(f"\n💾 Best model info saved to: best_model_info.json")
+        print(f"\n💾 Best model info saved to: stock_ret_predictions/best_model_info.json")
         print("   This file will be used by portfolio_analysis_detailed.py")
         
         # Alternative models ranking
