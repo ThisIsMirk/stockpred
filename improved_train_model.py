@@ -246,17 +246,38 @@ def train_and_evaluate_enhanced(data, model_type='lasso', n_features=50):
         all_predictions_df.to_csv(predictions_filename, index=False)
         print(f"Individual predictions saved to: {predictions_filename}")
         print(f"Predictions shape: {all_predictions_df.shape}")
+        
+        # Calculate overall out-of-sample R²
+        overall_r2 = r2_score(all_predictions_df['stock_exret'], all_predictions_df[model_type])
+        overall_mse = mean_squared_error(all_predictions_df['stock_exret'], all_predictions_df[model_type])
+        
+        print(f"\n🎯 OVERALL OUT-OF-SAMPLE PERFORMANCE:")
+        print(f"  Total test observations: {len(all_predictions_df):,}")
+        print(f"  Overall R²: {overall_r2:.6f}")
+        print(f"  Overall MSE: {overall_mse:.6f}")
+        print(f"  Overall RMSE: {np.sqrt(overall_mse):.6f}")
     
     # Convert results to DataFrame
     results_df = pd.DataFrame(results)
-    return results_df
+    
+    # Return both results and overall R² if predictions exist
+    if all_predictions:
+        overall_r2 = r2_score(all_predictions_df['stock_exret'], all_predictions_df[model_type])
+        return results_df, overall_r2
+    else:
+        return results_df, None
 
-def analyze_results(results_df, model_name):
+def analyze_results(results_df, model_name, overall_r2=None):
     """
     Analyze the results and provide insights.
     """
     print(f"\n{model_name} Results Analysis:")
     print("="*50)
+    
+    # Overall performance (if provided)
+    if overall_r2 is not None:
+        print(f"📊 OVERALL OUT-OF-SAMPLE R²: {overall_r2:.6f}")
+        print("-" * 50)
     
     # Basic statistics
     test_r2_mean = results_df['test_r2'].mean()
@@ -265,7 +286,7 @@ def analyze_results(results_df, model_name):
     positive_r2_count = (results_df['test_r2'] > 0).sum()
     target_r2_count = (results_df['test_r2'] >= 0.01).sum()
     
-    print(f"Test R² Statistics:")
+    print(f"Period-by-Period R² Statistics:")
     print(f"  Mean: {test_r2_mean:.4f}")
     print(f"  Median: {test_r2_median:.4f}")
     print(f"  Std: {test_r2_std:.4f}")
@@ -299,13 +320,13 @@ if __name__ == "__main__":
         
         # Train and evaluate enhanced Lasso model
         print(f"\nTraining Enhanced Lasso model with {n_features} features...")
-        lasso_results = train_and_evaluate_enhanced(data, model_type='lasso', n_features=n_features)
-        lasso_analysis = analyze_results(lasso_results, f"Enhanced Lasso ({n_features} features)")
+        lasso_results, lasso_overall_r2 = train_and_evaluate_enhanced(data, model_type='lasso', n_features=n_features)
+        lasso_analysis = analyze_results(lasso_results, f"Enhanced Lasso ({n_features} features)", lasso_overall_r2)
         
         # Train and evaluate enhanced Ridge model
         print(f"\nTraining Enhanced Ridge model with {n_features} features...")
-        ridge_results = train_and_evaluate_enhanced(data, model_type='ridge', n_features=n_features)
-        ridge_analysis = analyze_results(ridge_results, f"Enhanced Ridge ({n_features} features)")
+        ridge_results, ridge_overall_r2 = train_and_evaluate_enhanced(data, model_type='ridge', n_features=n_features)
+        ridge_analysis = analyze_results(ridge_results, f"Enhanced Ridge ({n_features} features)", ridge_overall_r2)
         
         # Save results
         lasso_results.to_csv(f"enhanced_lasso_results_{n_features}features.csv", index=False)
@@ -315,12 +336,22 @@ if __name__ == "__main__":
         lasso_target_achieved = (lasso_results['test_r2'] >= 0.01).sum()
         ridge_target_achieved = (ridge_results['test_r2'] >= 0.01).sum()
         
-        print(f"\nTarget Achievement (R² ≥ 0.01):")
-        print(f"  Lasso: {lasso_target_achieved}/{len(lasso_results)} periods")
-        print(f"  Ridge: {ridge_target_achieved}/{len(ridge_results)} periods")
+        print(f"\n🎯 SUMMARY FOR {n_features} FEATURES:")
+        if lasso_overall_r2 is not None:
+            print(f"  Lasso Overall R²: {lasso_overall_r2:.6f}")
+        else:
+            print(f"  Lasso Overall R²: N/A (no predictions)")
+        if ridge_overall_r2 is not None:
+            print(f"  Ridge Overall R²: {ridge_overall_r2:.6f}")
+        else:
+            print(f"  Ridge Overall R²: N/A (no predictions)")
+        print(f"  Lasso periods with R² ≥ 0.01: {lasso_target_achieved}/{len(lasso_results)}")
+        print(f"  Ridge periods with R² ≥ 0.01: {ridge_target_achieved}/{len(ridge_results)}")
         
+        if (lasso_overall_r2 and lasso_overall_r2 > 0) or (ridge_overall_r2 and ridge_overall_r2 > 0):
+            print("🎉 SUCCESS! We achieved positive overall out-of-sample R²!")
         if lasso_target_achieved > 0 or ridge_target_achieved > 0:
-            print("🎉 SUCCESS! We achieved positive R² ≥ 0.01 in some periods!")
+            print("🎉 SUCCESS! We achieved R² ≥ 0.01 in some periods!")
     
     print(f"\nTraining completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("All model predictions saved! Check the stock_predictions_*.csv files to choose the best model for portfolio analysis.") 
